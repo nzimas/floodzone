@@ -1,6 +1,6 @@
--- FLOODZONE
+-- THRINE - FLOODZONE
 -- based on Twine by: @cfd90
--- modified by @nzimas
+-- extended by @nzimas
 -- 
 -- Load 3 samples, set long transition
 -- long-press k1
@@ -93,7 +93,7 @@ local transition_time_options = {}
 for t = 100, 1000, 100 do
   table.insert(transition_time_options, t)
 end
-for t = 1500, 20000, 500 do
+for t = 1500, 45000, 500 do
   table.insert(transition_time_options, t)
 end
 
@@ -148,7 +148,7 @@ local function setup_params()
       end
     end)
     
-    params:add_control(i .. "random_seek_freq", i .. " random seek freq", controlspec.new(100, 20000, "lin", 100, 1000, "ms", 100/20000))
+    params:add_control(i .. "random_seek_freq", i .. " random seek freq", controlspec.new(100, 45000, "lin", 100, 1000, "ms", 100/45000))
     params:set_action(i .. "random_seek_freq", function(value)
       if params:get(i .. "random_seek") == 2 and random_seek_metros[i] ~= nil then
         random_seek_metros[i].time = value / 1000

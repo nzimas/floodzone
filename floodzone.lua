@@ -3,7 +3,7 @@
 -- extended by @nzimas
 -- 
 -- Load 3 samples, set long transition
--- long-press k1
+-- long-press k2
 -- watch the magic happen
 
 engine.name = "Glut"

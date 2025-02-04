@@ -1,12 +1,23 @@
--- THRINE - FLOODZONE
+-- FLOODZONE
+-- by @nzimas
 -- based on Twine by: @cfd90
--- extended by @nzimas
--- 
+--  
 -- Load 3 samples, set long transition
 -- long-press k2
 -- watch the magic happen
 
 engine.name = "Glut"
+
+-- Visual fill levels for each slot: 1 is fully filled, 0 is empty.
+local fill_levels = {1, 0, 0}
+
+-- Geometry constants for three squares across screen:
+-- Each square is 30x30. They are arranged horizontally at y=15 with
+-- left edges at x=10, x=49, and x=88.
+local square_size = 30
+local square_y = 15
+local square_x = {10, 49, 88}
+
 
 -- These globals are used for our UI metro and LFO/random seek metros:
 local ui_metro
@@ -404,6 +415,24 @@ local function transition_to_new_state()
   local old_slot = active_slot
   active_slot = new_slot
   
+  -- VISUAL crossfade for squares:
+clock.run(function()
+  local steps = 60  -- same number of steps you use for volume fades
+  local dt = transition_duration / steps
+  for i = 1, steps do
+    local t = i / steps
+    -- old slot goes from fill 1 to fill 0
+    fill_levels[old_slot] = 1 - t
+    -- new slot goes from fill 0 to fill 1
+    fill_levels[new_slot] = t
+    clock.sleep(dt)
+  end
+  -- Ensure final values are exact
+  fill_levels[old_slot] = 0
+  fill_levels[new_slot] = 1
+end)
+
+  
   -- After the full transition, gate off the old slot.
   clock.run(function()
     clock.sleep(transition_duration)
@@ -480,89 +509,35 @@ end
 
 function redraw()
   screen.clear()
-  screen.move(0, 10)
-  screen.level(15)
-  screen.text("J:")
-  screen.level(5)
-  screen.text(params:string("1jitter"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("2jitter"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("3jitter"))
-  screen.move(0, 20)
-  screen.level(15)
-  screen.text("Sz:")
-  screen.level(5)
-  screen.text(params:string("1size"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("2size"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("3size"))
-  screen.move(0, 30)
-  screen.level(15)
-  screen.text("D:")
-  screen.level(5)
-  screen.text(params:string("1density"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("2density"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("3density"))
-  screen.move(0, 40)
-  screen.level(15)
-  screen.text("Sp:")
-  screen.level(5)
-  screen.text(params:string("1spread"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("2spread"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("3spread"))
-  screen.move(0, 50)
-  screen.level(15)
-  screen.text("P:")
-  screen.level(5)
-  screen.text(params:string("1pitch"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("2pitch"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("3pitch"))
-  screen.move(0, 60)
-  screen.level(15)
-  screen.text("Sk:")
-  screen.level(5)
-  screen.text(params:string("1seek"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("2seek"))
-  screen.level(1)
-  screen.text(" / ")
-  screen.level(5)
-  screen.text(params:string("3seek"))
+
+  -- Draw three squares (one per sample slot).
+  for i = 1, 3 do
+    local fill = fill_levels[i]
+
+    -- 1) Draw the square outline at full brightness:
+    screen.level(15)
+    screen.rect(square_x[i], square_y, square_size, square_size)
+    screen.stroke()
+
+    -- 2) Fill portion: from top down, proportionally to 'fill'
+    if fill > 0 then
+      -- Use a slightly lower screen level for the fill so the outline remains clearly visible.
+      screen.level(10)
+      local fill_height = square_size * fill
+      -- If fill=1, we fill the entire 30px height; if fill=0.5, half of it, etc.
+      local fill_y = square_y + (square_size - fill_height)
+      screen.rect(square_x[i], fill_y, square_size, fill_height)
+      screen.fill()
+    end
+  end
+
   screen.update()
 end
+
 
 function init()
   setup_ui_metro()
   setup_params()
   setup_engine()
+  fill_levels = {1, 0, 0}  -- slot 1 filled; slots 2 and 3 empty
 end

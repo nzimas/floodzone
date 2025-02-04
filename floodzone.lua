@@ -2,7 +2,8 @@
 -- by @nzimas
 -- based on Twine by: @cfd90
 --  
--- Load 3 samples, set long transition
+-- Load 3 samples
+-- set a long transition time
 -- long-press k2
 -- watch the magic happen
 
@@ -104,7 +105,7 @@ local transition_time_options = {}
 for t = 100, 1000, 100 do
   table.insert(transition_time_options, t)
 end
-for t = 1500, 45000, 500 do
+for t = 1500, 90000, 500 do
   table.insert(transition_time_options, t)
 end
 
@@ -159,7 +160,7 @@ local function setup_params()
       end
     end)
     
-    params:add_control(i .. "random_seek_freq", i .. " random seek freq", controlspec.new(100, 45000, "lin", 100, 1000, "ms", 100/45000))
+    params:add_control(i .. "random_seek_freq", i .. " random seek freq", controlspec.new(100, 90000, "lin", 100, 1000, "ms", 100/90000))
     params:set_action(i .. "random_seek_freq", function(value)
       if params:get(i .. "random_seek") == 2 and random_seek_metros[i] ~= nil then
         random_seek_metros[i].time = value / 1000
@@ -309,34 +310,36 @@ end
 local function transition_to_new_state()
   local transition_duration = transition_time_options[ params:get("transition_time") ] / 1000
   
-  -- Choose a new slot that is not the active one.
+  -- 1) Identify old vs new
+  local old_slot = active_slot
   local candidates = {}
   for i = 1, 3 do
-    if i ~= active_slot then
+    if i ~= old_slot then
       table.insert(candidates, i)
     end
   end
   local new_slot = candidates[ math.random(#candidates) ]
-  
-  -- Ensure the new slot is gated on and force its volume to -60 dB.
+
+  -- 2) Gate on the new slot at -60 dB
   engine.gate(new_slot, 1)
   params:set(tostring(new_slot) .. "volume", -60)
   
+  -- 3) Copy old slot's granular params into the new slot:
   local granular_params = {"jitter", "size", "density", "spread"}
   for _, pname in ipairs(granular_params) do
-    local cur_val = params:get(tostring(active_slot) .. pname)
+    local cur_val = params:get(tostring(old_slot) .. pname)
     params:set(tostring(new_slot) .. pname, cur_val)
   end
   
-  -- Compute new random target values for the granular parameters.
-  local new_jitter  = random_float(params:get("min_jitter"), params:get("max_jitter"))
-  local new_size    = random_float(params:get("min_size"), params:get("max_size"))
+  -- 4) Compute new random target values for new_slot
+  local new_jitter  = random_float(params:get("min_jitter"),  params:get("max_jitter"))
+  local new_size    = random_float(params:get("min_size"),    params:get("max_size"))
   local new_density = random_float(params:get("min_density"), params:get("max_density"))
-  local new_spread  = random_float(params:get("min_spread"), params:get("max_spread"))
+  local new_spread  = random_float(params:get("min_spread"),  params:get("max_spread"))
   
-  -- Compute the new pitch target immediately.
-  local root_offset = params:get("pitch_root") - 1
-  local scale_index = params:get("pitch_scale")
+  -- ... pitch calculation ...
+  local root_offset    = params:get("pitch_root") - 1
+  local scale_index    = params:get("pitch_scale")
   local selected_scale = scale_options[scale_index]
   local base_intervals = scales[selected_scale]
   local allowed = {}
@@ -348,27 +351,28 @@ local function transition_to_new_state()
     end
   end
   local random_interval = allowed[ math.random(#allowed) ]
-  local new_pitch = root_offset + random_interval
+  local new_pitch       = root_offset + random_interval
   
-  -- Crossfade the granular parameters (excluding pitch) in the new slot.
-  smooth_transition(tostring(new_slot) .. "jitter", new_jitter, transition_duration)
-  smooth_transition(tostring(new_slot) .. "size", new_size, transition_duration)
+  -- 5) Crossfade the granular params (excluding pitch) onto new_slot:
+  smooth_transition(tostring(new_slot) .. "jitter",  new_jitter,  transition_duration)
+  smooth_transition(tostring(new_slot) .. "size",    new_size,    transition_duration)
   smooth_transition(tostring(new_slot) .. "density", new_density, transition_duration)
-  smooth_transition(tostring(new_slot) .. "spread", new_spread, transition_duration)
-  
-  -- Immediately update pitch (no transition).
+  smooth_transition(tostring(new_slot) .. "spread",  new_spread,  transition_duration)
+
+  -- Immediately set pitch
   params:set(tostring(new_slot) .. "pitch", new_pitch)
   
-  -- Define phase durations: phase 1 (fast fade–in up to –7 dB) and phase 2 (the remaining time).
+  -- 6) Define the two-phase volume crossfade durations
   local phase1_time = transition_duration * 0.2
   local phase2_time = transition_duration - phase1_time
   
-  -- Phase 1: Fade new slot from -60 dB to -7 dB using an ease–out curve.
+  -- 7) Launch Phase 1 fade: new_slot from -60 dB to -7 dB
   clock.run(function()
     local start_db = -60
-    local mid_db = -7
-    local steps = 30
-    local dt = phase1_time / steps
+    local mid_db   = -7
+    local steps    = 30
+    local dt       = phase1_time / steps
+    
     for i = 1, steps do
       local t = i / steps
       local factor = 1 - (1 - t)^2  -- ease–out
@@ -378,28 +382,31 @@ local function transition_to_new_state()
     end
     params:set(tostring(new_slot) .. "volume", mid_db)
     
-    -- Once the new slot reaches -7 dB, trigger Phase 2 concurrently:
-    -- Phase 2a: Fade out the active slot from 0 dB to -60 dB (ease–in).
+    -- PHASE 2 concurrency begins once new_slot hits -7 dB:
+    
+    -- (a) Fade out the old_slot from 0 dB -> -60 dB
     clock.run(function()
       local start_db_out = 0
-      local end_db_out = -60
-      local steps2 = 30
-      local dt2 = phase2_time / steps2
+      local end_db_out   = -60
+      local steps2       = 30
+      local dt2          = phase2_time / steps2
       for j = 1, steps2 do
         local t2 = j / steps2
         local factor2 = t2^2  -- ease–in
         local new_db_out = start_db_out + (end_db_out - start_db_out) * factor2
-        params:set(tostring(active_slot) .. "volume", new_db_out)
+        -- NOTE: old_slot, NOT active_slot
+        params:set(tostring(old_slot) .. "volume", new_db_out)
         clock.sleep(dt2)
       end
-      params:set(tostring(active_slot) .. "volume", end_db_out)
+      params:set(tostring(old_slot) .. "volume", end_db_out)
     end)
-    -- Phase 2b: Continue fading in the new slot from -7 dB to 0 dB (ease–out).
+    
+    -- (b) Continue fading in the new_slot from -7 dB -> 0 dB
     clock.run(function()
       local start_db_in = -7
-      local end_db_in = 0
-      local steps2 = 30
-      local dt2 = phase2_time / steps2
+      local end_db_in   = 0
+      local steps2      = 30
+      local dt2         = phase2_time / steps2
       for j = 1, steps2 do
         local t2 = j / steps2
         local factor2 = 1 - (1 - t2)^2  -- ease–out
@@ -411,34 +418,32 @@ local function transition_to_new_state()
     end)
   end)
   
-  -- Save the current active slot into a local variable, then update active_slot.
-  local old_slot = active_slot
   active_slot = new_slot
   
-  -- VISUAL crossfade for squares:
+  -- VISUAL FADE of squares: over the entire transition_time
 clock.run(function()
-  local steps = 60  -- same number of steps you use for volume fades
+  local steps = 60  -- same as your volume fade steps
   local dt = transition_duration / steps
   for i = 1, steps do
     local t = i / steps
-    -- old slot goes from fill 1 to fill 0
+    -- old slot goes from fill 1 to 0
     fill_levels[old_slot] = 1 - t
-    -- new slot goes from fill 0 to fill 1
+    -- new slot goes from fill 0 to 1
     fill_levels[new_slot] = t
     clock.sleep(dt)
   end
-  -- Ensure final values are exact
+  -- Ensure exact final values:
   fill_levels[old_slot] = 0
   fill_levels[new_slot] = 1
 end)
 
   
-  -- After the full transition, gate off the old slot.
   clock.run(function()
-    clock.sleep(transition_duration)
+    clock.sleep(transition_duration + 2) -- 2s extra beyond fade
     engine.gate(old_slot, 0)
   end)
 end
+
 
 
 local function setup_engine()

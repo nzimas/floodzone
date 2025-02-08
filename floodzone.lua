@@ -6,8 +6,7 @@
 -- Short-press K2 to rnd slot 1
 -- Short-press K3 to rnd slot 2
 -- Long-press K1 to rnd slot 3
--- Loads of params in EDIT menu
-
+-- Tweak loads of rnd params in EDIT menu
 
 engine.name = "Glut"
 
@@ -314,7 +313,7 @@ local function setup_params()
               local min_s = params:get("min_size")
               local max_s = params:get("max_size")
               local lfo_v = (math.sin(util.time()*params:get(i.."size_lfo")*2*math.pi)+1)/2
-              local s = min_s + (max_s-min_s)*lfo_v
+              local s = min_s + (max_s - min_s)*lfo_v
               params:set(i.."size", s)
             end
           end
@@ -354,6 +353,15 @@ local function setup_params()
         lfo_metros[i]:start()
       end
     end)
+
+    ------------------------------------------------------------------
+    -- NEW: pitch change? param
+    -- If set to "no," short-press randomization won't randomize pitch
+    -- If set to "yes," normal pitch randomization applies
+    ------------------------------------------------------------------
+    params:add_option(i.."pitch_change", i.." pitch change?", {"no","yes"}, 2)
+    -- default = yes (2) so the old behavior is the same by default
+    -- We do not remove or hide any existing code; just add this new param.
   end
 
   params:add_separator("key & scale")
@@ -414,6 +422,7 @@ end
 ----------------------------------------------------------------
 
 -- randomize(slot): uses morph_time for param transitions, immediate pitch
+-- BUT now we only change pitch if "pitch_change?" param == "yes".
 local function randomize(slot)
   local transition_ms = transition_time_options[ params:get("transition_time") ]
   local morph_ms      = morph_time_options[ params:get("morph_time") ]
@@ -425,24 +434,29 @@ local function randomize(slot)
   local new_density = random_float(params:get("min_density"), params:get("max_density"))
   local new_spread  = random_float(params:get("min_spread"),  params:get("max_spread"))
 
-  -- immediate pitch
-  local root_offset    = params:get("pitch_root")-1
-  local scale_index    = params:get("pitch_scale")
-  local selected_scale = scale_options[scale_index]
-  local base_intervals = scales[selected_scale]
-  local allowed = {}
-  for _,iv in ipairs(base_intervals) do
-    table.insert(allowed, iv-12)
-    table.insert(allowed, iv)
-    if iv==0 then
-      table.insert(allowed, iv+12)
+  -- We only randomize pitch if pitch_change? == "yes" (which is 2)
+  local pitch_change = (params:get(slot.."pitch_change") == 2)
+  
+  -- If pitch_change is true, pick a random pitch as before
+  if pitch_change then
+    local root_offset    = params:get("pitch_root")-1
+    local scale_index    = params:get("pitch_scale")
+    local selected_scale = scale_options[scale_index]
+    local base_intervals = scales[selected_scale]
+    local allowed = {}
+    for _,iv in ipairs(base_intervals) do
+      table.insert(allowed, iv-12)
+      table.insert(allowed, iv)
+      if iv==0 then
+        table.insert(allowed, iv+12)
+      end
     end
+    local random_interval = allowed[ math.random(#allowed) ]
+    local new_pitch = root_offset + random_interval
+    params:set(slot.."pitch", new_pitch)
   end
-  local random_interval = allowed[ math.random(#allowed) ]
-  local new_pitch = root_offset + random_interval
-  params:set(slot.."pitch", new_pitch)
 
-  -- morph the others
+  -- morph the others (jitter, size, density, spread)
   smooth_transition(slot.."jitter",  new_jitter,  morph_duration)
   smooth_transition(slot.."size",    new_size,    morph_duration)
   smooth_transition(slot.."density", new_density, morph_duration)
@@ -494,7 +508,7 @@ local function transition_to_new_state()
   local new_density = random_float(params:get("min_density"), params:get("max_density"))
   local new_spread  = random_float(params:get("min_spread"),  params:get("max_spread"))
 
-  -- immediate pitch
+  -- immediate pitch -- (unchanged) transitions ALWAYS randomize pitch
   local root_offset    = params:get("pitch_root")-1
   local scale_index    = params:get("pitch_scale")
   local selected_scale = scale_options[scale_index]

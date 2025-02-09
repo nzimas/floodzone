@@ -29,15 +29,12 @@ Norns / Norns Shield / Fates
 
 ### Keys
 
-- **K2** (Short-press):  
-  Randomizes **Slot 1**.
+- **K2** (Short-press): Randomizes **Slot 1**.
 
-- **K2** (Long-press):  
-  Initiates a **transition** from the **active slot** to a new slot picked at random (either slot 1, 2, or 3).  
+- **K2** (Long-press): Initiates a **transition** from the **active slot** to a new slot picked at random (either slot 1, 2, or 3).  
   During transition, the new slot is faded in and randomized.  
 
-- **K3** (Short-press):  
-  Randomizes **Slot 2**.
+- **K3** (Short-press): Randomizes **Slot 2**.
 
 - **K3** (Long-press):  
   **Triggers two extra harmony slots** (4 & 5). These harmony slots:  

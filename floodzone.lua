@@ -1,12 +1,13 @@
 -- FLOODZONE
 -- by @nzimas
--- based on Twine by: @cfd90
-
--- Long-press K2 to trig transition
+-- built upon Twine by: @cfd90
+--
+-- Long-press K2 to trig trans
 -- Short-press K2 to rnd slot 1
 -- Short-press K3 to rnd slot 2
 -- Long-press K1 to rnd slot 3
 -- Tweak loads of rnd params in EDIT menu
+-- Hold K3 to trig harmonies
 
 engine.name = "Glut"
 
@@ -24,7 +25,7 @@ local sample_dir  = _path.audio  -- user-chosen folder
 local last_old_slot_for_k2 = 1   -- used if we randomize the "old slot" on K2 release
 
 -- For "ping-pong" direction, we'll maintain a small Metro that toggles speed
-local pingpong_metros = {nil, nil, nil}  -- one for each slot
+local pingpong_metros = {nil, nil, nil}  -- one for each of the 3 main slots
 -- We'll store the current sign (+1 or -1) for each slot if it's in ping-pong mode
 local pingpong_sign   = {1,1,1}
 
@@ -41,6 +42,9 @@ local active_slot = 1
 -- For short vs long press logic
 local key1_hold = false
 local key2_hold = false
+
+-- We'll add a dedicated variable for K3's short/long press handling
+local key3_hold = false
 
 local scale_options = {"dorian", "natural minor", "harmonic minor", "melodic minor",
                        "major", "locrian", "phrygian"}
@@ -227,7 +231,7 @@ local function setup_params()
     params:add_file(i.."sample", i.." sample")
     params:set_action(i.."sample", function(file) engine.read(i,file) end)
 
-    -- "playhead_rate" => 0..4 (just an example range)
+    -- "playhead_rate"
     params:add_control(i.."playhead_rate", i.." playhead rate",
       controlspec.new(0, 4, "lin", 0.01, 1.0, "", 0.01/4))
     params:set_action(i.."playhead_rate", function(v)
@@ -255,7 +259,6 @@ local function setup_params()
     params:add_taper(i.."density", i.." density", 0,512,20,6,"hz")
     params:set_action(i.."density", function(v) engine.density(i,v) end)
 
-    -- We replaced "pitch" param with control of engine.pitch but keep the name
     params:add_taper(i.."pitch", i.." pitch", -48,48,0,0,"st")
     params:set_action(i.."pitch", function(v) engine.pitch(i, math.pow(0.5, -v/12)) end)
 
@@ -355,13 +358,10 @@ local function setup_params()
     end)
 
     ------------------------------------------------------------------
-    -- NEW: pitch change? param
-    -- If set to "no," short-press randomization won't randomize pitch
-    -- If set to "yes," normal pitch randomization applies
+    -- NEW: "pitch change?" param to selectively skip pitch randomization
     ------------------------------------------------------------------
     params:add_option(i.."pitch_change", i.." pitch change?", {"no","yes"}, 2)
-    -- default = yes (2) so the old behavior is the same by default
-    -- We do not remove or hide any existing code; just add this new param.
+    -- default = "yes" (2) => preserves old behavior
   end
 
   params:add_separator("key & scale")
@@ -414,6 +414,23 @@ local function setup_params()
   params:add_taper("pitch_4","pitch (4)",-48,48, 7, 0,"st")
   params:add_taper("pitch_5","pitch (5)",-48,48,12,0,"st")
 
+  ----------------------------------------------------------------
+  -- [NEW] HARMONY PARAMS
+  ----------------------------------------------------------------
+  params:add_separator("harmony")
+
+  -- Slot A
+  params:add_taper("A_volume", "A - volume", -60, 20, -12, 0, "dB")
+  params:add_control("A_pan",   "A - pan", controlspec.new(-1, 1, "lin", 0, 0, ""))
+  params:add_control("A_fade_in",  "A - fade in time",  controlspec.new(0, 9000, "lin", 1, 500, "ms"))
+  params:add_control("A_fade_out", "A - fade out time", controlspec.new(0, 9000, "lin", 1, 500, "ms"))
+
+  -- Slot B
+  params:add_taper("B_volume", "B - volume", -60, 20, -12, 0, "dB")
+  params:add_control("B_pan",   "B - pan", controlspec.new(-1, 1, "lin", 0, 0, ""))
+  params:add_control("B_fade_in",  "B - fade in time",  controlspec.new(0, 9000, "lin", 1, 500, "ms"))
+  params:add_control("B_fade_out", "B - fade out time", controlspec.new(0, 9000, "lin", 1, 500, "ms"))
+
   params:bang()
 end
 
@@ -422,7 +439,7 @@ end
 ----------------------------------------------------------------
 
 -- randomize(slot): uses morph_time for param transitions, immediate pitch
--- BUT now we only change pitch if "pitch_change?" param == "yes".
+-- BUT only randomizes pitch if "pitch_change?" param == "yes".
 local function randomize(slot)
   local transition_ms = transition_time_options[ params:get("transition_time") ]
   local morph_ms      = morph_time_options[ params:get("morph_time") ]
@@ -436,8 +453,7 @@ local function randomize(slot)
 
   -- We only randomize pitch if pitch_change? == "yes" (which is 2)
   local pitch_change = (params:get(slot.."pitch_change") == 2)
-  
-  -- If pitch_change is true, pick a random pitch as before
+
   if pitch_change then
     local root_offset    = params:get("pitch_root")-1
     local scale_index    = params:get("pitch_scale")
@@ -508,7 +524,7 @@ local function transition_to_new_state()
   local new_density = random_float(params:get("min_density"), params:get("max_density"))
   local new_spread  = random_float(params:get("min_spread"),  params:get("max_spread"))
 
-  -- immediate pitch -- (unchanged) transitions ALWAYS randomize pitch
+  -- immediate pitch (always randomize in transitions)
   local root_offset    = params:get("pitch_root")-1
   local scale_index    = params:get("pitch_scale")
   local selected_scale = scale_options[scale_index]
@@ -634,6 +650,150 @@ local function setup_engine()
   active_slot=1
 end
 
+-- Existing volume/pitch transitions for the main 3 slots are done above.
+-- [Below, we add new logic for the 2 harmony slots (4 & 5).]
+
+----------------------------------------------------------------
+-- 8) HARMONY SLOTS (4 & 5)
+----------------------------------------------------------------
+
+-- We do not expose these extra slots in the param menu for sample, jitter, etc.
+-- Instead, we randomize them internally whenever triggered.
+
+local function harmony_randomize(slot)
+  -- randomly set jitter, size, density, spread
+  local j = random_float(params:get("min_jitter"),  params:get("max_jitter"))
+  local s = random_float(params:get("min_size"),    params:get("max_size"))
+  local d = random_float(params:get("min_density"), params:get("max_density"))
+  local sp= random_float(params:get("min_spread"),  params:get("max_spread"))
+
+  engine.jitter(slot, j/1000)
+  engine.size(slot,   s/1000)
+  engine.density(slot,d)
+  engine.spread(slot, sp/100)
+
+  -- pick pitch from scale
+  local root_offset    = params:get("pitch_root")-1
+  local scale_index    = params:get("pitch_scale")
+  local selected_scale = scale_options[scale_index]
+  local base_intervals = scales[selected_scale]
+  local allowed = {}
+  for _,iv in ipairs(base_intervals) do
+    table.insert(allowed, iv-12)
+    table.insert(allowed, iv)
+    if iv==0 then
+      table.insert(allowed, iv+12)
+    end
+  end
+  local random_interval = allowed[ math.random(#allowed) ]
+  local new_pitch = root_offset + random_interval
+
+  -- same math as existing code => engine.pitch wants a speed ratio
+  -- if param in semitones = st, then ratio = 0.5^(-st/12).
+  engine.pitch(slot, math.pow(0.5, -new_pitch/12))
+end
+
+-- We'll do forward direction at speed=1 for both harmony slots:
+local function setup_harmony_playhead(slot)
+  engine.speed(slot, 1)
+  engine.seek(slot, 0)  -- start from beginning of the loaded sample
+  engine.gate(slot, 0)  -- we'll gate=1 when we fade in
+end
+
+-- We'll define a fade function that transitions from -60 dB to target_dB:
+local function harmony_fade_in(slot, target_dB, fade_ms)
+  clock.run(function()
+    local steps = 60
+    local dt = (fade_ms/1000) / steps
+    local start_db = -60
+    for i=1, steps do
+      local t = i/steps
+      local factor = 1 - (1 - t)^2
+      local new_db = start_db + (target_dB - start_db)*factor
+      engine.volume(slot, math.pow(10, new_db/20))
+      clock.sleep(dt)
+    end
+    engine.volume(slot, math.pow(10, target_dB/20))
+  end)
+end
+
+-- Similarly, fade out from current level back to -60 dB:
+local function harmony_fade_out(slot, start_dB, fade_ms)
+  clock.run(function()
+    local steps = 60
+    local dt = (fade_ms/1000) / steps
+    for i=1, steps do
+      local t = i/steps
+      local factor = t^2
+      local new_db = start_dB + (-60 - start_dB)*factor
+      engine.volume(slot, math.pow(10, new_db/20))
+      clock.sleep(dt)
+    end
+    engine.volume(slot, math.pow(10, -60/20))
+    engine.gate(slot, 0) -- turn off once fully faded out
+  end)
+end
+
+-- Trigger both harmony slots
+local function trigger_harmony()
+  -- use the active slot's sample
+  local file = params:get(active_slot.."sample")
+  if type(file)=="string" and file~="" then
+    engine.read(4, file)
+    engine.read(5, file)
+  else
+    -- If there's no sample set, do nothing
+    do return end
+  end
+
+  -- set up the forward direction for each new slot
+  setup_harmony_playhead(4)
+  setup_harmony_playhead(5)
+
+  -- randomize granular params + pitch for both
+  harmony_randomize(4)
+  harmony_randomize(5)
+
+  -- set their pan from user param
+  engine.pan(4, params:get("A_pan"))
+  engine.pan(5, params:get("B_pan"))
+
+  -- set volume to -60, then gate=1 => fade in to user volume
+  engine.volume(4, math.pow(10, -60/20))
+  engine.volume(5, math.pow(10, -60/20))
+
+  engine.gate(4, 1)
+  engine.gate(5, 1)
+
+  -- fade in
+  local A_target = params:get("A_volume")
+  local A_fade   = params:get("A_fade_in")
+  local B_target = params:get("B_volume")
+  local B_fade   = params:get("B_fade_in")
+
+  harmony_fade_in(4, A_target, A_fade)
+  harmony_fade_in(5, B_target, B_fade)
+end
+
+-- Release both harmony slots => fade out
+local function release_harmony()
+  -- figure out current volumes in dB so we can fade from them
+  -- We only stored them inside the engine; let's assume we can
+  -- interpret them from the user param for now. Or we do a small
+  -- hack: the "target volume" = param. We'll treat that as the start.
+  local A_start = params:get("A_volume")
+  local B_start = params:get("B_volume")
+  local A_out   = params:get("A_fade_out")
+  local B_out   = params:get("B_fade_out")
+
+  harmony_fade_out(4, A_start, A_out)
+  harmony_fade_out(5, B_start, B_out)
+end
+
+----------------------------------------------------------------
+-- KEY / ENC / REDRAW
+----------------------------------------------------------------
+
 function key(n,z)
   if n==1 then
     if z==1 then
@@ -675,8 +835,27 @@ function key(n,z)
 
   elseif n==3 then
     if z==1 then
-      -- short press => random slot 2
-      randomize(2)
+      -- We start the hold logic for K3
+      key3_hold = true
+      clock.run(function()
+        clock.sleep(1)
+        if key3_hold == true then
+          -- that means user is still holding => long press
+          key3_hold = "harmony"
+          trigger_harmony()
+        end
+      end)
+    else
+      -- release K3
+      if key3_hold == true then
+        -- that means it was a short press => random slot 2
+        key3_hold = false
+        randomize(2)
+      elseif key3_hold == "harmony" then
+        -- user was holding => now release => fade out harmony
+        key3_hold = false
+        release_harmony()
+      end
     end
   end
 end
@@ -716,5 +895,10 @@ function init()
   setup_ui_metro()
   setup_params()
   setup_engine()
+
+  -- harmony slots 4 & 5: do a quick init
+  setup_harmony_playhead(4)
+  setup_harmony_playhead(5)
+
   fill_levels = {1,0,0}
 end

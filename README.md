@@ -1,4 +1,4 @@
-## FLOODZONE: 3-slot granular sample player with smooth morphing and extensive randomisation
+## FLOODZONE: 3-slot granular sample nanipulation with smooth morphing, extensive randomisation and harmonizer
 
 FLOODZONE builds upon [Twine](https://norns.community/twine) and [Thrine](http://llllllll.co/t/thrine/70762/3) to offer evolving granular soundscapes and textures, by morphing seamlessly between sample slots.
 

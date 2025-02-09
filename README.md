@@ -23,7 +23,7 @@ Audio demo:
 
 Norns / Norns Shield / Fates
 
-### Documentation
+# Documentation
 
 ## 1. Overview & Interaction
 

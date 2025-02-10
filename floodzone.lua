@@ -1,6 +1,6 @@
 -- FLOODZONE
 -- by @nzimas
--- built upon Twine by: @cfd90
+-- based on Twine by: @cfd90
 --
 -- Long-press K2 to trig trans
 -- Short-press K2 to rnd slot 1
@@ -251,123 +251,110 @@ local function setup_params()
 
     -- jitter, size, density, pitch, spread, fade, seek...
     params:add_taper(i.."jitter", i.." jitter", 0,2000,0,5,"ms")
-    params:set_action(i.."jitter", function(v) engine.jitter(i, v/1000) end)
+    params:set_action(i.."jitter", function(val) engine.jitter(i, val/1000) end)
 
     params:add_taper(i.."size", i.." size", 1,500,100,5,"ms")
-    params:set_action(i.."size", function(v) engine.size(i, v/1000) end)
+    params:set_action(i.."size", function(val) engine.size(i, val/1000) end)
 
     params:add_taper(i.."density", i.." density", 0,512,20,6,"hz")
-    params:set_action(i.."density", function(v) engine.density(i,v) end)
+    params:set_action(i.."density", function(val) engine.density(i,val) end)
 
     params:add_taper(i.."pitch", i.." pitch", -48,48,0,0,"st")
-    params:set_action(i.."pitch", function(v) engine.pitch(i, math.pow(0.5, -v/12)) end)
+    params:set_action(i.."pitch", function(val) engine.pitch(i, math.pow(0.5, -val/12)) end)
 
     params:add_taper(i.."spread", i.." spread", 0,100,0,0,"%")
-    params:set_action(i.."spread", function(v) engine.spread(i, v/100) end)
+    params:set_action(i.."spread", function(val) engine.spread(i, val/100) end)
 
     params:add_taper(i.."fade", i.." att / dec", 1,9000,1000,3,"ms")
-    params:set_action(i.."fade", function(v) engine.envscale(i, v/1000) end)
+    params:set_action(i.."fade", function(val) engine.envscale(i, val/1000) end)
 
     params:add_control(i.."seek", i.." seek", controlspec.new(0,100,"lin",0.1,(i==3)and 100 or 0, "%", 0.1/100))
-    params:set_action(i.."seek", function(v) engine.seek(i, v/100) end)
+    params:set_action(i.."seek", function(val) engine.seek(i, val/100) end)
 
-    -- random_seek
     params:add_option(i.."random_seek", i.." randomize seek", {"off","on"},1)
+    -- "rnd seek frq min" (in ms)
+    params:add_control(i.."random_seek_freq_min", i.." rnd seek frq min",
+      controlspec.new(100, 30000, "lin", 100, 500, "ms", 0.00333)) -- 100/30000
+
+  params:add_control(i.."random_seek_freq_max", i.." rnd seek frq max",
+      controlspec.new(100, 30000, "lin", 100, 2000, "ms", 0.00333)) -- 100/30000
+
+    params:set_action(i.."random_seek_freq_min", function(val)
+      local max_val = params:get(i.."random_seek_freq_max")
+      if val > max_val then
+        return max_val
+      else
+        return val
+      end
+    end)
+    
+    params:set_action(i.."random_seek_freq_max", function(val)
+      local min_val = params:get(i.."random_seek_freq_min")
+      if val < min_val then
+        return min_val
+      else
+        return val
+      end
+    end)
+
+
+
+--random seek
     params:set_action(i.."random_seek", function(val)
-      if val==2 then
-        if random_seek_metros[i]==nil then
+      if val == 2 then
+        -- If turning ON random seek...
+        if random_seek_metros[i] == nil then
           random_seek_metros[i] = metro.init()
           random_seek_metros[i].event = function()
+            -- Randomly move the seek
             params:set(i.."seek", math.random()*100)
+            -- Re-randomize the interval
+            local tmin = params:get(i.."random_seek_freq_min")
+            local tmax = params:get(i.."random_seek_freq_max")
+            -- Ensure min <= max
+            if tmax < tmin then
+              local temp = tmin
+              tmin = tmax
+              tmax = temp
+            end
+            local next_interval = math.random(tmin, tmax) -- random int in [tmin, tmax]
+            random_seek_metros[i].time = next_interval / 1000
+            random_seek_metros[i]:start()
           end
         end
-        random_seek_metros[i]:start(params:get(i.."random_seek_freq")/1000)
+        -- Start the metro for the first time (small delay to avoid immediate repeat)
+        random_seek_metros[i].time = 0.1
+        random_seek_metros[i]:start()
       else
-        if random_seek_metros[i]~=nil then
+        -- If turning OFF random seek...
+        if random_seek_metros[i] ~= nil then
           random_seek_metros[i]:stop()
         end
       end
     end)
 
-    params:add_control(i.."random_seek_freq", i.." random seek freq", controlspec.new(100,90000,"lin",100,1000,"ms",100/90000))
-    params:set_action(i.."random_seek_freq", function(v)
-      if params:get(i.."random_seek")==2 and random_seek_metros[i]~=nil then
-        random_seek_metros[i].time = v/1000
+    -- If user changes freq_min or freq_max while active, we restart the metro quickly.
+    local function refresh_random_seek(i)
+      if params:get(i.."random_seek") == 2 and random_seek_metros[i]~=nil then
+        random_seek_metros[i]:stop()
+        random_seek_metros[i].time = 0.1
         random_seek_metros[i]:start()
       end
-    end)
+    end
 
-    -- LFO automation
-    params:add_option(i.."automate_density", i.." automate density", {"off","on"},1)
-    params:add_option(i.."automate_size",    i.." automate size",    {"off","on"},1)
-    params:set_action(i.."automate_density", function(val)
-      if val==2 then
-        if lfo_metros[i]==nil then
-          lfo_metros[i] = metro.init()
-          lfo_metros[i].event = function()
-            if params:get(i.."automate_density")==2 then
-              local min_d = params:get("min_density")
-              local max_d = params:get("max_density")
-              local lfo_v = (math.sin(util.time()*params:get(i.."density_lfo")*2*math.pi)+1)/2
-              local d = min_d + (max_d-min_d)*lfo_v
-              params:set(i.."density", d)
-            end
-            if params:get(i.."automate_size")==2 then
-              local min_s = params:get("min_size")
-              local max_s = params:get("max_size")
-              local lfo_v = (math.sin(util.time()*params:get(i.."size_lfo")*2*math.pi)+1)/2
-              local s = min_s + (max_s - min_s)*lfo_v
-              params:set(i.."size", s)
-            end
-          end
-        end
-        lfo_metros[i]:start(1/30)
-      else
-        if lfo_metros[i]~=nil then
-          lfo_metros[i]:stop()
-        end
-      end
-    end)
+    params:set_action(i.."random_seek_freq_min", function() refresh_random_seek(i) end)
+    params:set_action(i.."random_seek_freq_max", function() refresh_random_seek(i) end)
 
-    params:set_action(i.."automate_size", function(val)
-      if val==2 then
-        if lfo_metros[i]==nil then
-          lfo_metros[i] = metro.init()
-          lfo_metros[i].event = function()
-            local min_s = params:get("min_size")
-            local max_s = params:get("max_size")
-            local lfo_v = (math.sin(util.time()*params:get(i.."size_lfo")*2*math.pi)+1)/2
-            local s = min_s + (max_s-min_s)*lfo_v
-            params:set(i.."size", s)
-          end
-        end
-        lfo_metros[i]:start(1/30)
-      else
-        if lfo_metros[i]~=nil then
-          lfo_metros[i]:stop()
-        end
-      end
-    end)
-
-    params:add_control(i.."density_lfo", i.." density lfo", controlspec.new(0.01,10,"lin",0.01,0.5,"hz",0.01/10))
-    params:add_control(i.."size_lfo",    i.." size lfo",    controlspec.new(0.01,10,"lin",0.01,0.5,"hz",0.01/10))
-    params:set_action(i.."density_lfo", function()
-      if params:get(i.."automate_density")==2 and lfo_metros[i]~=nil then
-        lfo_metros[i]:start()
-      end
-    end)
-
-    ------------------------------------------------------------------
-    -- NEW: "pitch change?" param to selectively skip pitch randomization
-    ------------------------------------------------------------------
+    -- "pitch change?" param to selectively skip pitch randomization
     params:add_option(i.."pitch_change", i.." pitch change?", {"no","yes"}, 2)
-    -- default = "yes" (2) => preserves old behavior
-  end
+    end
+
 
   params:add_separator("key & scale")
   local note_names = {"C","C#/Db","D","D#/Eb","E","F","F#/Gb","G","G#/Ab","A","A#/Bb","B"}
   params:add_option("pitch_root", "root note", note_names, 1)
   params:add_option("pitch_scale","scale", scale_options, 1)
+
 
   params:add_separator("transition")
   params:add_option("transition_time","transition time (ms)", transition_time_options,10)
@@ -433,6 +420,19 @@ local function setup_params()
 
   params:bang()
 end
+
+-- Start a metro that enforces: random_seek_freq_min ≤ random_seek_freq_max
+local random_seek_clamp_metro = metro.init(function()
+  for i = 1, 3 do
+    local min_val = params:get(i.."random_seek_freq_min")
+    local max_val = params:get(i.."random_seek_freq_max")
+    if min_val > max_val then
+      params:set(i.."random_seek_freq_min", max_val)
+    end
+  end
+end, 0.1)
+
+random_seek_clamp_metro:start()
 
 ----------------------------------------------------------------
 -- 6) RANDOMIZE + TRANSITION
@@ -778,9 +778,6 @@ end
 -- Release both harmony slots => fade out
 local function release_harmony()
   -- figure out current volumes in dB so we can fade from them
-  -- We only stored them inside the engine; let's assume we can
-  -- interpret them from the user param for now. Or we do a small
-  -- hack: the "target volume" = param. We'll treat that as the start.
   local A_start = params:get("A_volume")
   local B_start = params:get("B_volume")
   local A_out   = params:get("A_fade_out")

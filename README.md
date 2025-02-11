@@ -204,3 +204,28 @@ Floodzone - v 20250209
 
 Via maiden:
 `;install https://github.com/nzimas/floodzone`
+
+### Changelog
+
+**Version 20250209**
+
+- Added playhead rate and playhead direction per sample slot
+- Added slot randomisation morph parameter with optional pitch change per sample slot
+- Added new global parameter to control K2's pitch behaviour release after long-pressing to start a transition (i found out that a random pitch applied to the slot that is fading out creates a decaying artifact that sounds right to my ears)
+- Minor fixes
+
+**Version 20250210**
+
+- Added scale-locked harmonisation
+
+When pressing and holding K3, two harmony slots will be triggered, each playing the sample in the active slot at two different pitches, randomly picked from the selected key / scale combo; moreover, the harmony slots will play with their own randomly generated granular parameters; this works exceptionally well with tonal samples where the root note is known.
+The following parameters can be set per slot: volume, pan, fade in time, fade out time (they are found under the harmony separator, at the bottom of the EDIT menu)
+Effectively, one can instantly create evolving ethereal triads a la Vidna Obmana.
+Every time K3 is pressed and held, a new scale-locked triad is formed.
+It works equally well with atonal soundscapes and industrial hellscapes.
+
+**Version 20250211**
+
+- Added random seek frequehcy min and max parameters, so that the playhead's position changes randomly within a defined interval
+- Added pitch rnage min and max, so that new notes are fenerated within a defined interval and locked to the chosen scale
+

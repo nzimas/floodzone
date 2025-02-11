@@ -206,6 +206,60 @@ local function update_playhead(i)
   end
 end
 
+local function get_random_pitch(slot)
+  local s = tostring(slot)
+  local root_offset = params:get("pitch_root") - 1
+  local scale_index = params:get("pitch_scale")
+  local selected_scale = scale_options[scale_index]
+  local base_intervals = scales[selected_scale]
+
+  -- Get pitch range min/max for this slot
+  local min_offset = tonumber(params:string(s.."pitch_rng_min"))  -- Convert string param to number
+  local max_offset = tonumber(params:string(s.."pitch_rng_max"))
+
+  -- Validate that min ≤ max
+  if min_offset > max_offset then
+    min_offset = max_offset
+  end
+
+  -- Retrieve the currently active pitch for this slot
+  local current_pitch = params:get(s.."pitch")
+  local current_offset = current_pitch - root_offset
+
+  -- Build a list of valid pitches within range
+  local allowed_pitches = {}
+  for _, interval in ipairs(base_intervals) do
+    local semitone_offsets = {interval - 12, interval, interval + 12}
+
+    for _, semitone_offset in ipairs(semitone_offsets) do
+      if semitone_offset >= min_offset and semitone_offset <= max_offset then
+        table.insert(allowed_pitches, semitone_offset)
+      end
+    end
+  end
+
+  -- Ensure that the current pitch is **excluded**, but only if there are alternatives
+  if #allowed_pitches > 1 then
+    for i, pitch in ipairs(allowed_pitches) do
+      if pitch == current_offset then
+        table.remove(allowed_pitches, i)
+        break  -- Remove only one instance
+      end
+    end
+  end
+
+  -- Pick a random pitch from the allowed set
+  if #allowed_pitches > 0 then
+    local chosen_offset = allowed_pitches[math.random(#allowed_pitches)]
+    return root_offset + chosen_offset
+  else
+    -- Fallback: return the root note if no valid pitches
+    return root_offset
+  end
+end
+
+
+
 ----------------------------------------------------------------
 -- 5) PARAM DEFINITIONS
 ----------------------------------------------------------------
@@ -345,10 +399,49 @@ local function setup_params()
     params:set_action(i.."random_seek_freq_min", function() refresh_random_seek(i) end)
     params:set_action(i.."random_seek_freq_max", function() refresh_random_seek(i) end)
 
-    -- "pitch change?" param to selectively skip pitch randomization
+    -- param to skip / pitch randomization
     params:add_option(i.."pitch_change", i.." pitch change?", {"no","yes"}, 2)
-    end
+    
+    -- Define valid pitch ranges (-24 to +24 semitones)
+  local pitch_rng_values = {}
 
+  for v = -24, 24 do
+    table.insert(pitch_rng_values, v)
+  end
+
+  -- Convert values to string representations
+  local pitch_rng_strings = {}
+
+  for _, v in ipairs(pitch_rng_values) do
+    table.insert(pitch_rng_strings, tostring(v))
+  end
+
+  -- Add parameters for min/max pitch range per slot
+  params:add_option(i.."pitch_rng_min", i.." pitch rng min", pitch_rng_strings, 25) -- Default: 0
+  params:add_option(i.."pitch_rng_max", i.." pitch rng max", pitch_rng_strings, 25) -- Default: 0
+
+  -- Ensure that min ≤ max
+  params:set_action(i.."pitch_rng_min", function(idx)
+    local min_val = pitch_rng_values[idx]  -- Convert index to actual semitone value
+    local max_idx = params:get(i.."pitch_rng_max") -- Get index (not value)
+    local max_val = pitch_rng_values[max_idx]  -- Convert index to actual semitone value
+
+    if min_val > max_val then
+      params:set(i.."pitch_rng_min", max_idx)  -- Set min to the current max index
+    end
+  end)
+
+  params:set_action(i.."pitch_rng_max", function(idx)
+    local max_val = pitch_rng_values[idx]  -- Convert index to actual semitone value
+    local min_idx = params:get(i.."pitch_rng_min") -- Get index (not value)
+    local min_val = pitch_rng_values[min_idx]  -- Convert index to actual semitone value
+
+    if max_val < min_val then
+      params:set(i.."pitch_rng_max", min_idx)  -- Set max to the current min index
+    end
+  end)
+
+    end
 
   params:add_separator("key & scale")
   local note_names = {"C","C#/Db","D","D#/Eb","E","F","F#/Gb","G","G#/Ab","A","A#/Bb","B"}
@@ -451,33 +544,19 @@ local function randomize(slot)
   local new_density = random_float(params:get("min_density"), params:get("max_density"))
   local new_spread  = random_float(params:get("min_spread"),  params:get("max_spread"))
 
-  -- We only randomize pitch if pitch_change? == "yes" (which is 2)
-  local pitch_change = (params:get(slot.."pitch_change") == 2)
-
-  if pitch_change then
-    local root_offset    = params:get("pitch_root")-1
-    local scale_index    = params:get("pitch_scale")
-    local selected_scale = scale_options[scale_index]
-    local base_intervals = scales[selected_scale]
-    local allowed = {}
-    for _,iv in ipairs(base_intervals) do
-      table.insert(allowed, iv-12)
-      table.insert(allowed, iv)
-      if iv==0 then
-        table.insert(allowed, iv+12)
-      end
-    end
-    local random_interval = allowed[ math.random(#allowed) ]
-    local new_pitch = root_offset + random_interval
+  -- Only randomize pitch if pitch_change? == "yes"
+  if params:get(slot.."pitch_change") == 2 then
+    local new_pitch = get_random_pitch(slot)
     params:set(slot.."pitch", new_pitch)
   end
 
-  -- morph the others (jitter, size, density, spread)
+  -- Smooth transition for other parameters
   smooth_transition(slot.."jitter",  new_jitter,  morph_duration)
   smooth_transition(slot.."size",    new_size,    morph_duration)
   smooth_transition(slot.."density", new_density, morph_duration)
   smooth_transition(slot.."spread",  new_spread,  morph_duration)
 end
+
 
 local function transition_to_new_state()
   local trans_ms      = transition_time_options[ params:get("transition_time") ]

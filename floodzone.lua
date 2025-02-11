@@ -258,7 +258,54 @@ local function get_random_pitch(slot)
   end
 end
 
+local function get_harmony_pitch(slot)
+  local s = tostring(slot)
+  
+  -- 1. Read the currently active pitch from the active slot.
+  local active_pitch = params:get(active_slot.."pitch")
+  
+  -- 2. Get the per-slot pitch range settings.
+  local min_offset = tonumber(params:string(s.."pitch_rng_min"))
+  local max_offset = tonumber(params:string(s.."pitch_rng_max"))
+  if min_offset > max_offset then
+    min_offset = max_offset
+  end
 
+  -- 3. Get the scale information.
+  local scale_index = params:get("pitch_scale")
+  local selected_scale = scale_options[scale_index]
+  local base_intervals = scales[selected_scale]
+
+  -- 4. Build a list of allowed pitch offsets (in semitones) within the given range.
+  local allowed_offsets = {}
+  for _, interval in ipairs(base_intervals) do
+    for _, shift in ipairs({-12, 0, 12}) do
+      local candidate = interval + shift
+      if candidate >= min_offset and candidate <= max_offset then
+        table.insert(allowed_offsets, candidate)
+      end
+    end
+  end
+
+  -- 5. Exclude the current pitch if there are alternative choices.
+  if #allowed_offsets > 1 then
+    for i, v in ipairs(allowed_offsets) do
+      if v == active_pitch then
+        table.remove(allowed_offsets, i)
+        break  -- remove only one instance
+      end
+    end
+  end
+
+  -- 6. Choose a random pitch offset from the remaining allowed list.
+  if #allowed_offsets > 0 then
+    local chosen_offset = allowed_offsets[math.random(#allowed_offsets)]
+    return chosen_offset
+  else
+    -- Fallback: if no alternative is available, return the active pitch.
+    return active_pitch
+  end
+end
 
 ----------------------------------------------------------------
 -- 5) PARAM DEFINITIONS
@@ -604,21 +651,8 @@ local function transition_to_new_state()
   local new_spread  = random_float(params:get("min_spread"),  params:get("max_spread"))
 
   -- immediate pitch (always randomize in transitions)
-  local root_offset    = params:get("pitch_root")-1
-  local scale_index    = params:get("pitch_scale")
-  local selected_scale = scale_options[scale_index]
-  local base_intervals = scales[selected_scale]
-  local allowed = {}
-  for _, iv in ipairs(base_intervals) do
-    table.insert(allowed, iv-12)
-    table.insert(allowed, iv)
-    if iv==0 then
-      table.insert(allowed, iv+12)
-    end
-  end
-  local random_interval = allowed[ math.random(#allowed) ]
-  local new_pitch = root_offset + random_interval
-  params:set(new_slot.."pitch", new_pitch)
+  local new_pitch = get_harmony_pitch(new_slot)
+params:set(new_slot.."pitch", new_pitch)
 
   -- crossfade param transitions
   smooth_transition(new_slot.."jitter",  new_jitter,  transition_duration)
@@ -729,15 +763,9 @@ local function setup_engine()
   active_slot=1
 end
 
--- Existing volume/pitch transitions for the main 3 slots are done above.
--- [Below, we add new logic for the 2 harmony slots (4 & 5).]
-
 ----------------------------------------------------------------
 -- 8) HARMONY SLOTS (4 & 5)
 ----------------------------------------------------------------
-
--- We do not expose these extra slots in the param menu for sample, jitter, etc.
--- Instead, we randomize them internally whenever triggered.
 
 local function harmony_randomize(slot)
   -- randomly set jitter, size, density, spread
@@ -752,34 +780,35 @@ local function harmony_randomize(slot)
   engine.spread(slot, sp/100)
 
   -- pick pitch from scale
-  local root_offset    = params:get("pitch_root")-1
-  local scale_index    = params:get("pitch_scale")
-  local selected_scale = scale_options[scale_index]
-  local base_intervals = scales[selected_scale]
-  local allowed = {}
-  for _,iv in ipairs(base_intervals) do
-    table.insert(allowed, iv-12)
-    table.insert(allowed, iv)
-    if iv==0 then
-      table.insert(allowed, iv+12)
-    end
-  end
-  local random_interval = allowed[ math.random(#allowed) ]
-  local new_pitch = root_offset + random_interval
+  local active_slot_pitch = params:get(active_slot .. "pitch")
 
-  -- same math as existing code => engine.pitch wants a speed ratio
-  -- if param in semitones = st, then ratio = 0.5^(-st/12).
-  engine.pitch(slot, math.pow(0.5, -new_pitch/12))
+-- 2) Get the user-selected scale (we still need the scale to build intervals)
+local scale_index = params:get("pitch_scale")
+local selected_scale = scale_options[scale_index]
+local base_intervals = scales[selected_scale]
+
+local harmony_intervals = {}
+for _, interval in ipairs(base_intervals) do
+  table.insert(harmony_intervals, interval - 12)
+  table.insert(harmony_intervals, interval)
+  if interval == 0 then
+    table.insert(harmony_intervals, interval + 12)
+  end
 end
 
--- We'll do forward direction at speed=1 for both harmony slots:
+local random_interval = harmony_intervals[math.random(#harmony_intervals)]
+
+local new_pitch = active_slot_pitch + random_interval
+
+engine.pitch(slot, math.pow(0.5, -new_pitch / 12))
+end
+
 local function setup_harmony_playhead(slot)
   engine.speed(slot, 1)
   engine.seek(slot, 0)  -- start from beginning of the loaded sample
   engine.gate(slot, 0)  -- we'll gate=1 when we fade in
 end
 
--- We'll define a fade function that transitions from -60 dB to target_dB:
 local function harmony_fade_in(slot, target_dB, fade_ms)
   clock.run(function()
     local steps = 60

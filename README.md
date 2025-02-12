@@ -226,6 +226,6 @@ It works equally well with atonal soundscapes and industrial hellscapes.
 
 **Version 20250211**
 
-- Added random seek frequehcy min and max parameters, so that the playhead's position changes randomly within a defined interval
-- Added pitch rnage min and max, so that new notes are fenerated within a defined interval and locked to the chosen scale
-
+- Added random seek frequency min and max parameters per slot, so that the playhead’s position changes randomly within a defined interval
+- Added pitch range min and max, so that new notes are generated within a defined interval and locked to the chosen scale
+- Changed scale-lock calculations based on the currently active slot, not the default key; this allows for the creation of triads that have greater harmonic consistent

@@ -229,3 +229,11 @@ It works equally well with atonal soundscapes and industrial hellscapes.
 - Added random seek frequency min and max parameters per slot, so that the playhead’s position changes randomly within a defined interval
 - Added pitch range min and max, so that new notes are generated within a defined interval and locked to the chosen scale
 - Changed scale-lock calculations based on the currently active slot, not the default key; this allows for the creation of triads that have greater harmonic consistent
+
+**Version 20250408**
+
+- Integration with GlutXtd (install it via [floodplains](https://github.com/nzimas/floodplains))
+- Filter randomisation options per voice
+- Global filter parameter ranges
+- Global delay
+- Global decimator
